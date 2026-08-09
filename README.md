@@ -22,7 +22,31 @@ Cada minuto el bot cierra una "vela" con el precio de BTC en pesos y decide:
 El estado (dinero, posición, historial de operaciones) se guarda en
 `estado_bot.json`, así que puedes detener el bot y retomarlo después.
 
-## Instalación
+## 🖥️ Versión web (dashboard bonito, lista para Vercel)
+
+En la carpeta [`web/`](web/) hay un dashboard con tema oscuro estilo fintech:
+gráfica en vivo del precio con las medias móviles y marcas de compra/venta,
+tarjetas de portafolio y rendimiento, historial de operaciones y panel de
+configuración. El robot corre en modo simulado directamente en tu navegador
+con precios reales de Bitso, y tu progreso se guarda localmente.
+
+```bash
+cd web
+npm install
+npm run dev   # abre http://localhost:3000
+```
+
+### Desplegar en Vercel
+
+1. Entra a [vercel.com](https://vercel.com) e importa este repositorio.
+2. En **Root Directory** selecciona `web`.
+3. Deploy. No necesita variables de entorno ni base de datos.
+
+> El bot corre mientras la pestaña esté abierta (es un simulador en el
+> navegador). Para dejarlo corriendo 24/7 usa la versión de Python de abajo
+> en una computadora o servidor.
+
+## Instalación (versión Python / terminal)
 
 ```bash
 pip install -r requirements.txt
