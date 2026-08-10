@@ -42,6 +42,13 @@ npm run dev   # abre http://localhost:3000
 2. En **Root Directory** selecciona `web`.
 3. Deploy. No necesita variables de entorno ni base de datos.
 
+> **¿Por qué tarda en comprar?** El robot no compra "por comprar": espera un
+> cruce confirmado de las medias móviles, y eso puede tardar horas si el
+> mercado está lateral. La barra de estado te dice exactamente qué tan cerca
+> está la señal (por ejemplo: "SMAs -0.021% · señal al cruzar ±0.05%"). Si
+> quieres verlo operar más seguido, baja el "Margen cruce" en la
+> configuración (más operaciones, más comisiones y más señales falsas).
+
 > **¿Por qué se detiene si lo dejo solo?** El robot web vive dentro de la
 > pestaña del navegador. Los navegadores frenan o congelan las pestañas en
 > segundo plano para ahorrar batería, y si la computadora entra en reposo se

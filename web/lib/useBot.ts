@@ -125,6 +125,7 @@ export function useBot() {
   // Datos internos que no necesitan re-render por sí mismos.
   const cierresRef = useRef<number[]>([]);
   const tendenciaRef = useRef<Tendencia>(null);
+  const velasPendienteRef = useRef(0);
   const proximoCierreRef = useRef<number>(0);
   const ultimoTickRef = useRef<number>(0);
   const configRef = useRef(config);
@@ -137,7 +138,13 @@ export function useBot() {
   useEffect(() => {
     const p = cargarPersistido();
     if (!p) return;
-    setConfig({ ...CONFIG_DEFAULT, ...p.config });
+    const cfgGuardada = { ...CONFIG_DEFAULT, ...p.config };
+    // Migración: el margen viejo por defecto (0.3%, pensado para velas de
+    // 1 hora) es inalcanzable con velas cortas y el robot nunca compraba.
+    if (cfgGuardada.margenCrucePct === 0.3 && cfgGuardada.velaSegundos < 900) {
+      cfgGuardada.margenCrucePct = CONFIG_DEFAULT.margenCrucePct;
+    }
+    setConfig(cfgGuardada);
     setEstado((e) => ({
       ...e,
       mxn: p.mxn,
@@ -227,14 +234,16 @@ export function useBot() {
         }
 
         if (cerroVela) {
-          const { decision, tendencia } = decidir(
+          const { decision, tendencia, velasPendiente } = decidir(
             cfg,
             cierresRef.current,
             tendenciaRef.current,
+            velasPendienteRef.current,
             cripto > 0,
             precioEntrada,
           );
           tendenciaRef.current = tendencia;
+          velasPendienteRef.current = velasPendiente;
           rsiActual = decision.rsi;
           smaR = decision.smaRapida;
           smaL = decision.smaLenta;
@@ -415,6 +424,7 @@ export function useBot() {
       setConfig(cfg);
       cierresRef.current = [];
       tendenciaRef.current = null;
+      velasPendienteRef.current = 0;
       const nuevo: EstadoBot = {
         corriendo: false,
         calentado: false,

@@ -20,6 +20,9 @@ class Config:
     rsi_sobrecompra: float = 70.0   # No comprar si el RSI está por encima de esto
     margen_cruce_pct: float = 0.3   # % mínimo de separación entre SMAs para
                                     # confirmar un cruce (filtra señales falsas)
+    velas_compra_pendiente: int = 3  # Si el RSI bloquea un cruce al alza, la
+                                     # compra queda pendiente estas velas; si
+                                     # el RSI no se enfría a tiempo, se descarta
 
     # Gestión de riesgo
     stop_loss_pct: float = 3.0      # Vender si el precio cae este % desde la entrada
