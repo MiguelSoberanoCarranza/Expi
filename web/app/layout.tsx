@@ -15,10 +15,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Robot Trader · BTC/MXN",
   description:
-    "Robot de trading que compra y vende Bitcoin solito con $500 MXN (simulador con precios reales de Bitso).",
+    "Ensemble multi-estrategia que compra y vende Bitcoin con $500 MXN (simulador con precios reales de Bitso).",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="es"

@@ -5,7 +5,7 @@
 // El estado se guarda en localStorage para sobrevivir recargas.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CONFIG_DEFAULT, Config, Tendencia, decidir, minimoDeVelas } from "./strategy";
+import { CONFIG_DEFAULT, Config, MotorEstrategia, minimoDeVelas } from "./strategy";
 
 export interface Operacion {
   id: number;
@@ -47,7 +47,7 @@ export interface EstadoBot {
   proximaVelaEn: number; // segundos
 }
 
-const CLAVE_STORAGE = "robot-trading-estado-v1";
+const CLAVE_STORAGE = "robot-trading-estado-v2";
 const MAX_PUNTOS = 400;
 const MAX_CIERRES = 500;
 
@@ -124,8 +124,7 @@ export function useBot() {
 
   // Datos internos que no necesitan re-render por sí mismos.
   const cierresRef = useRef<number[]>([]);
-  const tendenciaRef = useRef<Tendencia>(null);
-  const velasPendienteRef = useRef(0);
+  const motorRef = useRef(new MotorEstrategia());
   const proximoCierreRef = useRef<number>(0);
   const ultimoTickRef = useRef<number>(0);
   const configRef = useRef(config);
@@ -234,16 +233,12 @@ export function useBot() {
         }
 
         if (cerroVela) {
-          const { decision, tendencia, velasPendiente } = decidir(
+          const decision = motorRef.current.decidir(
             cfg,
             cierresRef.current,
-            tendenciaRef.current,
-            velasPendienteRef.current,
             cripto > 0,
             precioEntrada,
           );
-          tendenciaRef.current = tendencia;
-          velasPendienteRef.current = velasPendiente;
           rsiActual = decision.rsi;
           smaR = decision.smaRapida;
           smaL = decision.smaLenta;
@@ -423,8 +418,7 @@ export function useBot() {
       const cfg = { ...configRef.current, ...nuevaConfig };
       setConfig(cfg);
       cierresRef.current = [];
-      tendenciaRef.current = null;
-      velasPendienteRef.current = 0;
+      motorRef.current.reset();
       const nuevo: EstadoBot = {
         corriendo: false,
         calentado: false,

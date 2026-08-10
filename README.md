@@ -1,34 +1,57 @@
-# Robot de trading (BTC/MXN)
+# Robot de trading (BTC/MXN) — ensemble multi-estrategia
 
 Robot que arranca con **$500 MXN** y compra/vende Bitcoin solito según el
 mercado, usando precios reales de [Bitso](https://bitso.com) (par `btc_mxn`).
+
+Combina varias estrategias clásicas (SMA+RSI, MACD, Bollinger, Momentum) en un
+**ensemble con voto ponderado** y detección de régimen (alcista / lateral /
+bajista), pensado para sobrevivir a la comisión real de Bitso (~0.65% por lado).
 
 > ⚠️ **Importante:** por defecto el bot corre en **modo simulado (paper
 > trading)**: usa precios reales pero dinero ficticio. Así puedes ver cómo le
 > iría a tus 500 pesos sin arriesgar nada. El trading con dinero real puede
 > generar pérdidas; nada de esto es asesoría financiera.
 
-## Cómo funciona
+## Cómo funciona el ensemble
 
-Cada minuto el bot cierra una "vela" con el precio de BTC en pesos y decide:
+Cada vela, cuatro estrategias votan `comprar` / `vender` / `esperar`:
 
-- **Compra** cuando la media móvil rápida (SMA 9) cruza por encima de la lenta
-  (SMA 21) y el RSI no está sobrecomprado (< 70). Señal de tendencia al alza.
-- **Vende** cuando la media rápida cruza por debajo de la lenta, **o** si la
-  posición pierde 3% (*stop-loss*), **o** si gana 5% (*take-profit*).
-- Descuenta una comisión de 0.65% por operación (la taker de Bitso), para que
-  la simulación sea realista.
+| Estrategia | Idea | Peso |
+|---|---|---|
+| **MACD** | Cruce del histograma (motor principal) | 2 |
+| **SMA + RSI** | Cruce de medias con filtro de sobrecompra | 1 |
+| **Momentum** | Precio sobre EMA + ROC positivo | 1 |
+| **Bollinger** | Rebote en banda inferior (solo confirma) | +1 bonus |
 
-El estado (dinero, posición, historial de operaciones) se guarda en
-`estado_bot.json`, así que puedes detener el bot y retomarlo después.
+Se opera cuando el **score ≥ 2** (MACD solo ya alcanza). Además:
 
-## 🖥️ Versión web (dashboard bonito, lista para Vercel)
+- Detecta el régimen con ADX + sesgo de EMAs.
+- En bajista fuerte solo escucha al MACD (evita que SMA/momentum compren
+  rallies falsos).
+- Bollinger **no abre solo** (en bears de crypto “comprar la caída” destruye
+  capital); solo suma si ya hay otra señal.
+- Las salidas por señal exigen cubrir comisión ida+vuelta + un colchón.
+- Stop-loss fijo (default 3%) y take-profit ampliable con ATR (default 8%).
+
+### Resultado del backtest (referencia)
+
+Con comisión 0.65%, capital 500, sobre ~1 año de velas diarias Bitso (`btc_mxn`):
+
+| Estrategia | Rendimiento | vs buy & hold (−46%) |
+|---|---|---|
+| **ensemble / MACD** | **+5.7%** | +54 pts |
+| momentum | −22% | |
+| sma (anterior) | −30% | |
+| bollinger | −48% | |
+
+En un mes lateral de velas de 1 h nadie gana mucho: el ensemble empató con
+MACD (~−5%). Un buen backtest **no garantiza** el futuro.
+
+## 🖥️ Versión web (dashboard, lista para Vercel)
 
 En la carpeta [`web/`](web/) hay un dashboard con tema oscuro estilo fintech:
-gráfica en vivo del precio con las medias móviles y marcas de compra/venta,
-tarjetas de portafolio y rendimiento, historial de operaciones y panel de
-configuración. El robot corre en modo simulado directamente en tu navegador
-con precios reales de Bitso, y tu progreso se guarda localmente.
+gráfica en vivo, portafolio, historial y selector de estrategia. El robot corre
+en modo simulado en tu navegador con precios reales de Bitso.
 
 ```bash
 cd web
@@ -42,22 +65,8 @@ npm run dev   # abre http://localhost:3000
 2. En **Root Directory** selecciona `web`.
 3. Deploy. No necesita variables de entorno ni base de datos.
 
-> **¿Por qué tarda en comprar?** El robot no compra "por comprar": espera un
-> cruce confirmado de las medias móviles, y eso puede tardar horas si el
-> mercado está lateral. La barra de estado te dice exactamente qué tan cerca
-> está la señal (por ejemplo: "SMAs -0.021% · señal al cruzar ±0.05%"). Si
-> quieres verlo operar más seguido, baja el "Margen cruce" en la
-> configuración (más operaciones, más comisiones y más señales falsas).
-
-> **¿Por qué se detiene si lo dejo solo?** El robot web vive dentro de la
-> pestaña del navegador. Los navegadores frenan o congelan las pestañas en
-> segundo plano para ahorrar batería, y si la computadora entra en reposo se
-> detiene todo. El robot está preparado para eso: su reloj corre en un Web
-> Worker (que el navegador no frena tan agresivamente), pide mantener la
-> pantalla despierta mientras está al frente, y si detecta que estuvo dormido
-> se pone al día recalculando sus indicadores al despertar. Aun así, para
-> operar 24/7 de verdad usa la versión de Python de abajo en una computadora
-> que no se duerma o en un servidor.
+> **¿Por qué se detiene si lo dejo solo?** El robot web vive en la pestaña.
+> Usa la versión Python abajo para operar 24/7 en un servidor.
 
 ## Instalación (versión Python / terminal)
 
@@ -67,39 +76,25 @@ pip install -r requirements.txt
 
 ## Uso
 
-### 1. Probar la estrategia con datos históricos (backtest)
+### 1. Backtest (una estrategia o comparación)
 
 ```bash
-python -m robot_trading backtest              # últimos 30 días, velas de 1 hora
-python -m robot_trading backtest --velas 1d   # último año, velas diarias en MXN
+python -m robot_trading backtest                      # ensemble, velas 1h
+python -m robot_trading backtest --velas 1d           # 1 año Bitso MXN
+python -m robot_trading backtest --comparar --velas 1d
+python -m robot_trading backtest --estrategia macd
 ```
-
-Muestra cada compra/venta que habría hecho el bot, el rendimiento final y la
-comparación contra solo comprar y aguantar (*buy & hold*).
 
 ### 2. Correr el bot en modo simulado (recomendado)
 
 ```bash
 python -m robot_trading run --capital 500
+python -m robot_trading run --estrategia ensemble
 ```
 
-Verás algo así:
-
-```
-[10:32:01] Modo SIMULADO (paper trading): no se usa dinero real.
-[10:32:01] Par btc_mxn | capital inicial $500.00 MXN | vela de 60s | SMA 9/21 | ...
-[10:33:02] ⏳ Espera — fuera del mercado | SMA9 1,113,205 vs SMA21 1,113,890 | RSI 42
-[10:47:03] 🟢 COMPRA a $1,112,500.00 MXN (0.00044660 BTC) — cruce al alza de SMA (RSI 55)
-```
-
-Detenlo con `Ctrl+C`; el estado queda guardado.
+Detenlo con `Ctrl+C`; el estado queda en `estado_bot.json`.
 
 ### 3. Modo real (dinero de verdad, bajo tu propio riesgo)
-
-Solo si ya probaste bastante en simulado y aceptas el riesgo:
-
-1. Crea llaves de API en Bitso con permiso de *trading*.
-2. Exporta las variables:
 
 ```bash
 export BITSO_API_KEY="tu_llave"
@@ -114,18 +109,19 @@ Sin las tres variables y el flag `--live`, el bot **nunca** toca dinero real.
 
 | Opción | Default | Descripción |
 |---|---|---|
+| `--estrategia` | `ensemble` | `ensemble`, `macd`, `sma`, `momentum`, `bollinger` |
 | `--capital` | 500 | Pesos con los que arranca |
-| `--book` | `btc_mxn` | Par de Bitso (ej. `eth_mxn`, `xrp_mxn`) |
+| `--book` | `btc_mxn` | Par de Bitso |
 | `--vela` | 60 | Segundos por vela |
-| `--sma-rapida` / `--sma-lenta` | 9 / 21 | Periodos de las medias móviles |
-| `--stop-loss` / `--take-profit` | 3 / 5 | % de pérdida/ganancia para salir |
+| `--sma-rapida` / `--sma-lenta` | 9 / 21 | Periodos de las medias |
+| `--stop-loss` / `--take-profit` | 3 / 8 | % de pérdida/ganancia para salir |
 | `--comision` | 0.65 | % de comisión por operación |
 
 ## Advertencias honestas
 
-- Con $500 MXN las comisiones pesan: cada ciclo compra+venta cuesta ~1.3%, así
-  que la estrategia necesita movimientos mayores a eso para ganar.
-- Ninguna estrategia gana siempre; un buen resultado en backtest no garantiza
-  el futuro. Usa el modo simulado un buen rato antes de pensar en `--live`.
+- Con $500 MXN las comisiones pesan: cada ciclo compra+venta cuesta ~1.3%.
+- Ninguna estrategia gana siempre; el ensemble mejora el historial frente a
+  SMA sola, pero puede perder en mercados laterales o con gaps.
+- Usa el modo simulado un buen rato antes de pensar en `--live`.
 - Bitso tiene montos mínimos por orden; con menos de ~100 MXN algunas órdenes
   reales pueden ser rechazadas.
