@@ -39,6 +39,7 @@ def correr(config: Config) -> None:
     _log(
         f"Par {config.book} | capital inicial ${config.capital_inicial:,.2f} MXN | "
         f"vela de {config.vela_segundos}s | SMA {config.sma_rapida}/{config.sma_lenta} | "
+        f"margen de cruce {config.margen_cruce_pct}% | "
         f"stop-loss {config.stop_loss_pct}% | take-profit {config.take_profit_pct}%"
     )
 

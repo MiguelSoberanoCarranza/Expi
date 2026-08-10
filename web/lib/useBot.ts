@@ -69,6 +69,39 @@ function cargarPersistido(): Persistido | null {
   }
 }
 
+// Los navegadores frenan los setInterval de pestañas en segundo plano (hasta
+// una vez por minuto, o los congelan por completo). Los timers dentro de un
+// Web Worker no sufren ese freno, así que el "reloj" del bot vive ahí.
+function crearWorkerReloj(): Worker | null {
+  if (typeof Worker === "undefined") return null;
+  try {
+    const codigo =
+      "let id=null;onmessage=e=>{clearInterval(id);if(e.data&&e.data.ms)id=setInterval(()=>postMessage(0),e.data.ms);};";
+    const url = URL.createObjectURL(new Blob([codigo], { type: "text/javascript" }));
+    return new Worker(url);
+  } catch {
+    return null;
+  }
+}
+
+interface SentinelaWakeLock {
+  release: () => Promise<void>;
+}
+
+// Pide al navegador que no apague la pantalla mientras el robot corre
+// (Wake Lock API; si el navegador no la soporta, simplemente no hace nada).
+async function pedirWakeLock(): Promise<SentinelaWakeLock | null> {
+  try {
+    const nav = navigator as Navigator & {
+      wakeLock?: { request: (tipo: "screen") => Promise<SentinelaWakeLock> };
+    };
+    if (!nav.wakeLock || document.visibilityState !== "visible") return null;
+    return await nav.wakeLock.request("screen");
+  } catch {
+    return null;
+  }
+}
+
 export function useBot() {
   const [config, setConfig] = useState<Config>(CONFIG_DEFAULT);
   const [estado, setEstado] = useState<EstadoBot>({
@@ -92,7 +125,9 @@ export function useBot() {
   // Datos internos que no necesitan re-render por sí mismos.
   const cierresRef = useRef<number[]>([]);
   const tendenciaRef = useRef<Tendencia>(null);
+  const velasPendienteRef = useRef(0);
   const proximoCierreRef = useRef<number>(0);
+  const ultimoTickRef = useRef<number>(0);
   const configRef = useRef(config);
   const estadoRef = useRef(estado);
   const corriendoRef = useRef(false);
@@ -103,7 +138,13 @@ export function useBot() {
   useEffect(() => {
     const p = cargarPersistido();
     if (!p) return;
-    setConfig({ ...CONFIG_DEFAULT, ...p.config });
+    const cfgGuardada = { ...CONFIG_DEFAULT, ...p.config };
+    // Migración: el margen viejo por defecto (0.3%, pensado para velas de
+    // 1 hora) es inalcanzable con velas cortas y el robot nunca compraba.
+    if (cfgGuardada.margenCrucePct === 0.3 && cfgGuardada.velaSegundos < 900) {
+      cfgGuardada.margenCrucePct = CONFIG_DEFAULT.margenCrucePct;
+    }
+    setConfig(cfgGuardada);
     setEstado((e) => ({
       ...e,
       mxn: p.mxn,
@@ -132,7 +173,11 @@ export function useBot() {
     }
   }, []);
 
+  const tickEnCursoRef = useRef(false);
+
   const tick = useCallback(async () => {
+    if (tickEnCursoRef.current) return;
+    tickEnCursoRef.current = true;
     const cfg = configRef.current;
     try {
       const r = await fetch(`/api/ticker?book=${cfg.book}`, { cache: "no-store" });
@@ -140,6 +185,26 @@ export function useBot() {
       const t = (await r.json()) as { precio: number; cambio24Pct: number };
       const precio = t.precio;
       const ahora = Date.now();
+
+      // ¿La pestaña estuvo dormida (segundo plano, laptop en reposo)?
+      // Si el hueco es grande, las velas viejas ya no sirven: se recalientan
+      // los indicadores con historial fresco antes de volver a decidir.
+      let mensajeDespertar: string | null = null;
+      const ultimoTick = ultimoTickRef.current;
+      ultimoTickRef.current = ahora;
+      if (ultimoTick && ahora - ultimoTick > Math.max(cfg.velaSegundos * 2, 90) * 1000) {
+        const minutos = Math.max(1, Math.round((ahora - ultimoTick) / 60000));
+        mensajeDespertar = `El navegador durmió la pestaña ${minutos} min · indicadores recalculados`;
+        proximoCierreRef.current = ahora + cfg.velaSegundos * 1000;
+        try {
+          const n = minimoDeVelas(cfg) + 5;
+          const rv = await fetch(`/api/velas?book=${cfg.book}&n=${n}`, { cache: "no-store" });
+          const dv = (await rv.json()) as { cierres: number[] };
+          if (dv.cierres.length > 0) cierresRef.current = dv.cierres;
+        } catch {
+          // Sin historial: el bot vuelve a recolectar velas en vivo.
+        }
+      }
 
       let nuevoPunto: PuntoGrafica | null = null;
       const cerroVela = ahora >= proximoCierreRef.current;
@@ -164,15 +229,21 @@ export function useBot() {
         let compra: number | undefined;
         let venta: number | undefined;
 
+        if (mensajeDespertar) {
+          ultimoMotivo = mensajeDespertar;
+        }
+
         if (cerroVela) {
-          const { decision, tendencia } = decidir(
+          const { decision, tendencia, velasPendiente } = decidir(
             cfg,
             cierresRef.current,
             tendenciaRef.current,
+            velasPendienteRef.current,
             cripto > 0,
             precioEntrada,
           );
           tendenciaRef.current = tendencia;
+          velasPendienteRef.current = velasPendiente;
           rsiActual = decision.rsi;
           smaR = decision.smaRapida;
           smaL = decision.smaLenta;
@@ -246,6 +317,8 @@ export function useBot() {
       });
     } catch {
       setEstado((e) => ({ ...e, error: "Sin conexión con el mercado, reintentando…" }));
+    } finally {
+      tickEnCursoRef.current = false;
     }
   }, [persistir]);
 
@@ -255,9 +328,17 @@ export function useBot() {
     if (!estado.corriendo) return;
     const cfg = configRef.current;
     proximoCierreRef.current = Date.now() + cfg.velaSegundos * 1000;
+    ultimoTickRef.current = 0;
 
     let intervalo: ReturnType<typeof setInterval> | null = null;
+    let worker: Worker | null = null;
     let cancelado = false;
+
+    // Al volver a la pestaña, disparar un tick inmediato para ponerse al día.
+    const alVolver = () => {
+      if (document.visibilityState === "visible" && !cancelado) void tick();
+    };
+    document.addEventListener("visibilitychange", alVolver);
 
     (async () => {
       // Calentar indicadores con historial (una sola vez por sesión).
@@ -278,22 +359,64 @@ export function useBot() {
       }
       if (cancelado) return;
       await tick();
-      intervalo = setInterval(tick, cfg.pollSegundos * 1000);
+      if (cancelado) return;
+      // El reloj vive en un Web Worker para que el navegador no lo frene
+      // cuando la pestaña queda en segundo plano.
+      worker = crearWorkerReloj();
+      if (worker) {
+        worker.onmessage = () => {
+          if (!cancelado) void tick();
+        };
+        worker.postMessage({ ms: cfg.pollSegundos * 1000 });
+      } else {
+        intervalo = setInterval(tick, cfg.pollSegundos * 1000);
+      }
     })();
 
     return () => {
       cancelado = true;
+      document.removeEventListener("visibilitychange", alVolver);
+      if (worker) worker.terminate();
       if (intervalo) clearInterval(intervalo);
     };
   }, [estado.corriendo, tick]);
+
+  // Mantener la pantalla despierta mientras el robot corre (si el navegador
+  // lo permite); se vuelve a pedir cada vez que la pestaña regresa al frente.
+  useEffect(() => {
+    if (!estado.corriendo) return;
+    let sentinela: SentinelaWakeLock | null = null;
+    let desmontado = false;
+
+    const pedir = async () => {
+      sentinela = await pedirWakeLock();
+      if (desmontado && sentinela) void sentinela.release().catch(() => {});
+    };
+    void pedir();
+
+    const alCambiarVisibilidad = () => {
+      if (document.visibilityState === "visible") void pedir();
+    };
+    document.addEventListener("visibilitychange", alCambiarVisibilidad);
+
+    return () => {
+      desmontado = true;
+      document.removeEventListener("visibilitychange", alCambiarVisibilidad);
+      if (sentinela) void sentinela.release().catch(() => {});
+    };
+  }, [estado.corriendo]);
 
   const iniciar = useCallback(() => {
     setEstado((e) => ({ ...e, corriendo: true, ultimoMotivo: "Arrancando robot…" }));
   }, []);
 
   const pausar = useCallback(() => {
-    setEstado((e) => ({ ...e, corriendo: false, ultimoMotivo: "Robot en pausa" }));
-  }, []);
+    setEstado((e) => {
+      const nuevo = { ...e, corriendo: false, ultimoMotivo: "Robot en pausa" };
+      persistir(configRef.current, nuevo);
+      return nuevo;
+    });
+  }, [persistir]);
 
   const reiniciar = useCallback(
     (nuevaConfig?: Partial<Config>) => {
@@ -301,6 +424,7 @@ export function useBot() {
       setConfig(cfg);
       cierresRef.current = [];
       tendenciaRef.current = null;
+      velasPendienteRef.current = 0;
       const nuevo: EstadoBot = {
         corriendo: false,
         calentado: false,

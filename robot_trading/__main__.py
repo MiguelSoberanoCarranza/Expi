@@ -21,9 +21,11 @@ def _agregar_flags_comunes(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sma-rapida", type=int, default=d.sma_rapida)
     parser.add_argument("--sma-lenta", type=int, default=d.sma_lenta)
     parser.add_argument("--rsi", type=int, default=d.rsi_periodo)
-    parser.add_argument("--margen", type=float, default=d.margen_cruce_pct,
+    parser.add_argument("--margen", type=float, default=None,
                         help="%% mínimo de separación entre SMAs para confirmar "
-                             "un cruce (filtra señales falsas)")
+                             "un cruce (filtra señales falsas). Por defecto: "
+                             "0.3 con velas largas (>=15 min) y 0.05 con velas "
+                             "cortas, donde las SMAs se separan mucho menos")
     parser.add_argument("--stop-loss", type=float, default=d.stop_loss_pct,
                         help="%% de pérdida máxima antes de vender")
     parser.add_argument("--take-profit", type=float, default=d.take_profit_pct,
@@ -39,13 +41,19 @@ def _config_desde_args(args: argparse.Namespace) -> Config:
         sma_rapida=args.sma_rapida,
         sma_lenta=args.sma_lenta,
         rsi_periodo=args.rsi,
-        margen_cruce_pct=args.margen,
         stop_loss_pct=args.stop_loss,
         take_profit_pct=args.take_profit,
         comision_pct=args.comision,
     )
     if hasattr(args, "vela"):
         cfg.vela_segundos = args.vela
+    if args.margen is not None:
+        cfg.margen_cruce_pct = args.margen
+    elif hasattr(args, "vela") and cfg.vela_segundos < 900:
+        # Solo aplica al comando run: con velas cortas las SMAs se separan
+        # mucho menos que con las velas de 1 hora del backtest; el margen por
+        # defecto se ajusta para que sí haya señales.
+        cfg.margen_cruce_pct = 0.05
     if hasattr(args, "estado"):
         cfg.archivo_estado = args.estado
     if getattr(args, "live", False):

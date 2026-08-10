@@ -42,9 +42,22 @@ npm run dev   # abre http://localhost:3000
 2. En **Root Directory** selecciona `web`.
 3. Deploy. No necesita variables de entorno ni base de datos.
 
-> El bot corre mientras la pestaña esté abierta (es un simulador en el
-> navegador). Para dejarlo corriendo 24/7 usa la versión de Python de abajo
-> en una computadora o servidor.
+> **¿Por qué tarda en comprar?** El robot no compra "por comprar": espera un
+> cruce confirmado de las medias móviles, y eso puede tardar horas si el
+> mercado está lateral. La barra de estado te dice exactamente qué tan cerca
+> está la señal (por ejemplo: "SMAs -0.021% · señal al cruzar ±0.05%"). Si
+> quieres verlo operar más seguido, baja el "Margen cruce" en la
+> configuración (más operaciones, más comisiones y más señales falsas).
+
+> **¿Por qué se detiene si lo dejo solo?** El robot web vive dentro de la
+> pestaña del navegador. Los navegadores frenan o congelan las pestañas en
+> segundo plano para ahorrar batería, y si la computadora entra en reposo se
+> detiene todo. El robot está preparado para eso: su reloj corre en un Web
+> Worker (que el navegador no frena tan agresivamente), pide mantener la
+> pantalla despierta mientras está al frente, y si detecta que estuvo dormido
+> se pone al día recalculando sus indicadores al despertar. Aun así, para
+> operar 24/7 de verdad usa la versión de Python de abajo en una computadora
+> que no se duerma o en un servidor.
 
 ## Instalación (versión Python / terminal)
 

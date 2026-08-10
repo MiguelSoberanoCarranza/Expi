@@ -202,6 +202,11 @@ export default function Home() {
       </div>
 
       <footer className="mt-8 text-center text-[11px] leading-relaxed text-tinta-suave">
+        El robot trabaja mientras esta pestaña siga abierta; si el navegador la
+        duerme o la computadora entra en reposo, se pone al día solito al
+        despertar. Para operar 24/7 usa la versión de terminal (Python) en un
+        servidor.
+        <br />
         Simulador educativo con dinero ficticio y precios reales · No es asesoría
         financiera · El trading con dinero real puede generar pérdidas.
       </footer>

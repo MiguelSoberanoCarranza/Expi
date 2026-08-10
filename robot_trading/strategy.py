@@ -24,7 +24,10 @@ def rsi(valores: list[float], periodo: int = 14) -> float | None:
         perdidas.append(max(-cambio, 0.0))
     perdida_media = sum(perdidas) / periodo
     if perdida_media == 0:
-        return 100.0
+        # Mercado totalmente plano: RSI neutro, no "sobrecomprado". Con velas
+        # cortas los cierres se repiten mucho y el RSI clásico se pegaba en
+        # 100, bloqueando compras sin razón.
+        return 50.0 if sum(ganancias) == 0 else 100.0
     rs = (sum(ganancias) / periodo) / perdida_media
     return 100.0 - 100.0 / (1.0 + rs)
 
@@ -46,6 +49,10 @@ class EstrategiaSMA:
         # Solo cambia cuando la separación entre SMAs supera margen_cruce_pct,
         # lo que filtra los cruces falsos que generan operaciones perdedoras.
         self._tendencia: str | None = None
+        # Cruce al alza bloqueado por RSI alto: comprar en cuanto se enfríe.
+        # Vale por config.velas_compra_pendiente velas; después se descarta
+        # (entrar muy tarde tras el cruce suele ser mala entrada).
+        self._velas_pendiente = 0
 
     def minimo_de_velas(self) -> int:
         return max(self.cfg.sma_lenta, self.cfg.rsi_periodo + 1)
@@ -78,13 +85,37 @@ class EstrategiaSMA:
             self._tendencia = "alza"
         elif separacion_pct <= -self.cfg.margen_cruce_pct:
             self._tendencia = "baja"
+        elif self._tendencia is None:
+            # Arranque: fijar la tendencia según el signo actual; si no, en
+            # mercado lateral se quedaba sin tendencia y nunca operaba.
+            self._tendencia = "alza" if separacion_pct >= 0 else "baja"
         cruce_al_alza = tendencia_previa == "baja" and self._tendencia == "alza"
         cruce_a_la_baja = tendencia_previa == "alza" and self._tendencia == "baja"
 
-        if not tiene_posicion and cruce_al_alza:
+        # La compra pendiente caduca al pasar las velas o si la tendencia
+        # dejó de ser alcista.
+        if self._tendencia != "alza":
+            self._velas_pendiente = 0
+        elif self._velas_pendiente > 0:
+            self._velas_pendiente -= 1
+
+        if not tiene_posicion and (cruce_al_alza or self._velas_pendiente > 0):
             if indice_rsi >= self.cfg.rsi_sobrecompra:
-                return Decision("esperar", f"cruce al alza pero RSI alto ({indice_rsi:.0f})")
-            return Decision("comprar", f"cruce al alza de SMA (RSI {indice_rsi:.0f})")
+                # No perder la señal de inmediato: queda pendiente unas velas
+                # por si el RSI se enfría rápido.
+                if cruce_al_alza:
+                    self._velas_pendiente = self.cfg.velas_compra_pendiente
+                return Decision(
+                    "esperar",
+                    f"cruce al alza pero RSI alto ({indice_rsi:.0f}); compra pendiente",
+                )
+            motivo = (
+                f"cruce al alza de SMA (RSI {indice_rsi:.0f})"
+                if cruce_al_alza
+                else f"entrada tras enfriarse el RSI ({indice_rsi:.0f})"
+            )
+            self._velas_pendiente = 0
+            return Decision("comprar", motivo)
 
         if tiene_posicion and cruce_a_la_baja:
             return Decision("vender", "cruce a la baja de SMA")
@@ -92,6 +123,6 @@ class EstrategiaSMA:
         estado = "en posición" if tiene_posicion else "fuera del mercado"
         return Decision(
             "esperar",
-            f"{estado} | SMA{self.cfg.sma_rapida} {rapida:,.0f} vs "
-            f"SMA{self.cfg.sma_lenta} {lenta:,.0f} | RSI {indice_rsi:.0f}",
+            f"{estado} | SMAs {separacion_pct:+.3f}% "
+            f"(señal al cruzar ±{self.cfg.margen_cruce_pct}%) | RSI {indice_rsi:.0f}",
         )
