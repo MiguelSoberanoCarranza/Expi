@@ -72,7 +72,7 @@ export default function Home() {
           <div>
             <h1 className="text-lg font-bold leading-tight">Robot Trader</h1>
             <p className="text-xs text-tinta-suave">
-              BTC/MXN · precios reales de Bitso ·{" "}
+              BTC/MXN · ensemble multi-estrategia ·{" "}
               <span className="font-semibold text-ambar">modo simulado</span>
             </p>
           </div>

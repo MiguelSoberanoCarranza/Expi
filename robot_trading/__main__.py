@@ -18,6 +18,12 @@ def _agregar_flags_comunes(parser: argparse.ArgumentParser) -> None:
                         help=f"Capital inicial en MXN (default {d.capital_inicial:.0f})")
     parser.add_argument("--book", default=d.book,
                         help=f"Par de Bitso a operar (default {d.book})")
+    parser.add_argument(
+        "--estrategia",
+        choices=["ensemble", "sma", "macd", "bollinger", "momentum"],
+        default=d.estrategia,
+        help="Estrategia a usar (default: ensemble = consenso de varias)",
+    )
     parser.add_argument("--sma-rapida", type=int, default=d.sma_rapida)
     parser.add_argument("--sma-lenta", type=int, default=d.sma_lenta)
     parser.add_argument("--rsi", type=int, default=d.rsi_periodo)
@@ -38,6 +44,7 @@ def _config_desde_args(args: argparse.Namespace) -> Config:
     cfg = Config(
         book=args.book,
         capital_inicial=args.capital,
+        estrategia=args.estrategia,
         sma_rapida=args.sma_rapida,
         sma_lenta=args.sma_lenta,
         rsi_periodo=args.rsi,
@@ -83,6 +90,11 @@ def main() -> None:
     back.add_argument("--velas", choices=["1h", "1d"], default="1h",
                       help="1h = 30 días de velas por hora (USD); "
                            "1d = 1 año de velas diarias de Bitso (MXN)")
+    back.add_argument(
+        "--comparar",
+        action="store_true",
+        help="Compara sma, macd, bollinger, momentum y ensemble lado a lado",
+    )
 
     args = parser.parse_args()
     cfg = _config_desde_args(args)
@@ -90,7 +102,7 @@ def main() -> None:
     if args.comando == "backtest":
         from .backtest import correr_backtest
 
-        correr_backtest(cfg, velas_tipo=args.velas)
+        correr_backtest(cfg, velas_tipo=args.velas, comparar=args.comparar)
     else:
         from .bot import correr
 

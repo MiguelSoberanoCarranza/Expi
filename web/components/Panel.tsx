@@ -48,6 +48,27 @@ export default function Panel({
 }) {
   return (
     <div className="space-y-4 p-4">
+      <label className="block">
+        <span className="mb-1 flex items-baseline justify-between text-[11px] uppercase tracking-wide text-tinta-suave">
+          Estrategia
+        </span>
+        <select
+          className="campo font-mono"
+          value={config.estrategia}
+          disabled={corriendo}
+          onChange={(e) =>
+            onCambio({
+              estrategia: e.target.value as Config["estrategia"],
+            })
+          }
+        >
+          <option value="ensemble">Ensemble (recomendado)</option>
+          <option value="macd">MACD</option>
+          <option value="sma">SMA + RSI</option>
+          <option value="momentum">Momentum</option>
+          <option value="bollinger">Bollinger</option>
+        </select>
+      </label>
       <div className="grid grid-cols-2 gap-3">
         <Campo
           etiqueta="Capital"
@@ -68,20 +89,6 @@ export default function Panel({
           onCambio={(v) => onCambio({ velaSegundos: v })}
         />
         <Campo
-          etiqueta="SMA rápida"
-          valor={config.smaRapida}
-          min={2}
-          deshabilitado={corriendo}
-          onCambio={(v) => onCambio({ smaRapida: Math.round(v) })}
-        />
-        <Campo
-          etiqueta="SMA lenta"
-          valor={config.smaLenta}
-          min={3}
-          deshabilitado={corriendo}
-          onCambio={(v) => onCambio({ smaLenta: Math.round(v) })}
-        />
-        <Campo
           etiqueta="Stop-loss"
           sufijo="%"
           valor={config.stopLossPct}
@@ -100,13 +107,11 @@ export default function Panel({
           onCambio={(v) => onCambio({ takeProfitPct: v })}
         />
         <Campo
-          etiqueta="Margen cruce"
-          sufijo="%"
-          valor={config.margenCrucePct}
-          min={0}
-          paso={0.05}
+          etiqueta="Votos mínimos"
+          valor={config.votosMinimos}
+          min={1}
           deshabilitado={corriendo}
-          onCambio={(v) => onCambio({ margenCrucePct: v })}
+          onCambio={(v) => onCambio({ votosMinimos: Math.round(v) })}
         />
         <Campo
           etiqueta="Comisión"
@@ -126,8 +131,8 @@ export default function Panel({
         Reiniciar portafolio
       </button>
       <p className="text-[11px] leading-relaxed text-tinta-suave">
-        Los cambios aplican con el robot en pausa. Reiniciar borra las
-        operaciones y regresa el capital al monto configurado.
+        El ensemble combina MACD, SMA, momentum y Bollinger con voto
+        ponderado. Los cambios aplican en pausa; reiniciar borra el historial.
       </p>
     </div>
   );

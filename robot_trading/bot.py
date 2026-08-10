@@ -6,7 +6,7 @@ from datetime import datetime
 from .config import Config
 from .market import cierres_para_calentar, precio_actual_bitso
 from .portfolio import Portafolio
-from .strategy import EstrategiaSMA
+from .strategy import crear_estrategia
 
 MAX_CIERRES = 500  # Velas que se conservan en memoria
 
@@ -17,7 +17,7 @@ def _log(mensaje: str) -> None:
 
 
 def correr(config: Config) -> None:
-    estrategia = EstrategiaSMA(config)
+    estrategia = crear_estrategia(config)
     portafolio = Portafolio(config)
 
     live = None
@@ -38,7 +38,8 @@ def correr(config: Config) -> None:
 
     _log(
         f"Par {config.book} | capital inicial ${config.capital_inicial:,.2f} MXN | "
-        f"vela de {config.vela_segundos}s | SMA {config.sma_rapida}/{config.sma_lenta} | "
+        f"vela de {config.vela_segundos}s | estrategia {config.estrategia} | "
+        f"SMA {config.sma_rapida}/{config.sma_lenta} | "
         f"margen de cruce {config.margen_cruce_pct}% | "
         f"stop-loss {config.stop_loss_pct}% | take-profit {config.take_profit_pct}%"
     )
